@@ -1,0 +1,27 @@
+# Secrets and local configuration
+
+.env
+.env.*
+!.env.example
+**/slskd-credentials.env
+**/*credentials*
+application_credentials_inventory.txt
+
+# Application databases and runtime data
+
+data/
+*.log
+*.sqlite
+*.sqlite3
+
+# Personal music and downloads
+
+music/
+downloads/
+incomplete/
+
+# Editor and operating system files
+
+.DS_Store
+Thumbs.db
+*.bak
