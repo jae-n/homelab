@@ -1,0 +1,56 @@
+# Example Compose configuration for the Explo + slskd project.
+#
+# This is a sanitized example for documentation; review paths and local
+# configuration before using it. Navidrome runs in a separate Compose project
+# under ~/navidrome/docker-compose.yml.
+#
+# Required private files in this project's directory:
+#   .env                      Explo configuration (API tokens, settings, etc.)
+#   slskd-credentials.env     SLSKD_SLSK_USERNAME, SLSKD_SLSK_PASSWORD,
+#                            SLSKD_API_KEY
+#
+# Do not commit those private files to GitHub.
+
+services:
+  slskd:
+    image: slskd/slskd:latest
+    container_name: slskd
+    user: "1000:1000"
+    restart: unless-stopped
+    ports:
+      - "5030:5030"
+      - "50300:50300"
+    env_file:
+      - ./slskd-credentials.env
+    volumes:
+      # slskd configuration and application data
+      - ./slskd:/app
+      # Completed Soulseek downloads on the second USB drive
+      - /mnt/music2/slskd/downloads:/app/downloads
+      # Optional: enable only after copying existing incomplete downloads
+      # from ./slskd/incomplete to /mnt/music2/slskd/incomplete.
+      # - /mnt/music2/slskd/incomplete:/app/incomplete
+
+  explo:
+    image: ghcr.io/lumepart/explo:latest
+    container_name: explo
+    restart: unless-stopped
+    ports:
+      - "7288:7288"
+    depends_on:
+      - slskd
+    environment:
+      TZ: America/Chicago
+      WEB_UI: "true"
+      # Add EXPLO_UI_USERNAME and EXPLO_UI_PASSWORD to your local .env.
+      # These required substitutions prevent an unauthenticated web UI.
+      UI_USERNAME: "${EXPLO_UI_USERNAME:?Set EXPLO_UI_USERNAME in your private .env file}"
+      UI_PASSWORD: "${EXPLO_UI_PASSWORD:?Set EXPLO_UI_PASSWORD in your private .env file}"
+    volumes:
+      # Finished music managed by Explo on the second USB drive
+      - /mnt/music2/explo:/data
+      # Shared download staging directory
+      - /mnt/music2/slskd/downloads:/slskd
+      # Explo settings and custom configuration
+      - ./.env:/opt/explo/.env
+      - ./config:/opt/explo/config
