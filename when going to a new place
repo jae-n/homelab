@@ -1,0 +1,67 @@
+1. Proxmox console (mini PC screen and keyboard, logged in as root)
+nano /etc/network/interfaces
+
+In the vmbr0 section, set these two lines, then save with Ctrl+O, Enter, Ctrl+X:
+
+address 192.168.1.50/24
+gateway 192.168.1.254
+
+Then:
+
+nano /etc/hosts
+
+Change only the IP at the start of your host’s line to 192.168.1.50, then save and exit.
+
+reboot
+2. Proxmox console: check addresses
+ip a
+pct list
+pct exec 100 ip a
+pct exec 101 ip a
+3. Proxmox console: Tailscale remote access
+echo 'net.ipv4.ip_forward = 1' >> /etc/sysctl.d/99-tailscale.conf
+sysctl -p /etc/sysctl.d/99-tailscale.conf
+tailscale up --advertise-routes=192.168.1.0/24
+
+Then approve the route at login.tailscale.com > Machines > Proxmox machine > Edit route settings.
+
+4. Windows PowerShell (run as Administrator): make the names work on your laptop
+
+Run this once only:
+
+Add-Content C:\Windows\System32\drivers\etc\hosts "192.168.1.80 truenas.jprivateproptery.com vault.jprivateproptery.com nginx.jprivateproptery.com"
+ipconfig /flushdns
+ping vault.jprivateproptery.com
+
+The ping should show 192.168.1.80.
+
+5. Windows PowerShell: tests
+nslookup vault.jprivateproptery.com 1.1.1.1
+nslookup vault.jprivateproptery.com
+curl.exe -k --resolve vault.jprivateproptery.com:443:192.168.1.80 https://vault.jprivateproptery.com
+6. Values to type in the dashboards
+
+Cloudflare (DNS > Records):
+
+A      jprivateproptery.com   192.168.1.80          DNS only
+CNAME  *                      jprivateproptery.com  DNS only
+
+Nginx Proxy Manager (http://192.168.1.80:81):
+
+nginx.jprivateproptery.com   http://192.168.1.80:81
+truenas.jprivateproptery.com https://192.168.1.88:443
+vault.jprivateproptery.com   https://192.168.1.82:8000
+
+AT&T gateway (http://192.168.1.254), reserve these addresses:
+
+192.168.1.80  MAC bc:24:11:93:ab:41  (NPM)
+192.168.1.82  MAC bc:24:11:b1:bc:8c  (Vault)
+192.168.1.88  TrueNAS MAC from the device list
+7. Addresses to open in the browser
+http://192.168.1.80:81
+https://192.168.1.50:8006
+https://192.168.1.82:8000
+https://192.168.1.88
+https://vault.jprivateproptery.com
+https://truenas.jprivateproptery.com
+https://nginx.jprivateproptery.com
