@@ -1,0 +1,85 @@
+# Hardware
+
+What my homelab runs on. Last updated: 2026-11-11
+
+## Inventory
+
+| Device | Role | Specs | Address | Notes |
+|---|---|---|---|---|
+| HP EliteDesk (mini PC) | Proxmox server | Intel Core i5, 16 GB RAM, storage _unknown_ | 192.168.1.50 | Runs 24/7, wired |
+| Raspberry Pi 2 | _spare / role_ | 1 GB RAM, 32-bit ARM, 100 Mb Ethernet | _unknown_ | microSD storage |
+| TP-Link TL-SG1005D | Network switch | 5-port gigabit, unmanaged | n/a | No setup needed |
+| Creality K2 | 3D printer | _exact model unknown_ | _unknown_ | Home network only |
+
+## Services on the server
+
+| ID | Name | Address | Role |
+|---|---|---|---|
+| Host | Proxmox | 192.168.1.50 | Hypervisor, web UI on port 8006 |
+| 100 | Vaultwarden | 192.168.1.82 | Password manager |
+| 101 | Nginx Proxy Manager | 192.168.1.80 | Reverse proxy, also on Tailscale |
+| 104 | TrueNAS (VM) | 192.168.1.88 | Storage |
+| _new_ | Pi-hole | 192.168.1.60 | Network ad blocker |
+
+## Wiring
+
+```
+
+Notes:
+
+- 
+```
+
+## Device details
+
+### HP EliteDesk (Proxmox server)
+
+| Item | Details |
+|---|---|
+| Model | HP EliteDesk mini PC (exact model _unknown_) |
+| CPU | Intel Core i5 |
+| RAM | 16 GB |
+| Storage | _unknown_ |
+| Network | 1 Gb Ethernet |
+| Role | Proxmox VE host |
+
+Notes:
+
+- A TrueNAS VM can use most of the 16 GB. Give it a fixed amount (for example 6 to 8 GB) and leave the rest for the host and containers.
+- Containers use far less memory than VMs. Vaultwarden, NPM and Pi-hole each need very little.
+- Mini PCs usually take two SO-DIMM sticks, so check the model's maximum before upgrading RAM.
+- A small UPS protects against power cuts, which can corrupt VMs and storage.
+
+### Raspberry Pi 2
+
+| Item | Details |
+|---|---|
+| Model | Raspberry Pi 2 (Model B) |
+| CPU | Quad-core ARM, 32-bit |
+| RAM | 1 GB |
+| Storage | microSD |
+| Network | 100 Mb Ethernet, no built-in Wi-Fi |
+| Role | _spare_ |
+
+Notes:
+
+- Best for light jobs because the CPU is old and the Ethernet is slow.
+- Use a good microSD card and the official power supply.
+- Ideas: backup DNS server, Tailscale device, uptime monitor.
+
+### TP-Link TL-SG1005D
+
+| Item | Details |
+|---|---|
+| Model | TP-Link TL-SG1005D |
+| Ports | 5 x gigabit |
+| Type | Unmanaged (no VLANs, no web interface) |
+| Role | Connects the wired devices |
+
+### Creality K2
+
+| Item | Details |
+|---|---|
+| Model | Creality K2 (exact model _unknown_) |
+| Network | _Wi-Fi or Ethernet_ |
+| Role | 3D printer |
