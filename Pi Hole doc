@@ -1,0 +1,112 @@
+## Pi-hole (network ad blocker)
+
+Pi-hole runs in its own LXC container at 192.168.1.60. It blocks ads and trackers by answering `0.0.0.0` for blocked domains. It only protects devices that use it as their DNS server.
+
+### Basics
+
+Log in to the container console as `root` (or use `pct enter <ID>` from the Proxmox host). This is the Linux login, separate from the Pi-hole web password.
+
+Set the web password (password only, no username) and check status:
+
+```
+pihole setpassword
+pihole status
+```
+
+Find the address:
+
+```
+ip a
+```
+
+Web interface: `http://192.168.1.60/admin`
+
+### Test that blocking works
+
+```
+nslookup doubleclick.net 192.168.1.60
+```
+
+A blocked domain returns `0.0.0.0`.
+
+### Blocklists
+
+In the web interface go to **Lists** and use **Add blocklist** (not allowlist) for each:
+
+```
+https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt
+https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/tif.txt
+```
+
+- Pro: ads and trackers.
+- TIF: malware and phishing (large list, may block legitimate sites).
+- The default StevenBlack list stays enabled.
+
+Test a link before adding it (expect `HTTP/2 200`):
+
+```
+curl -sI https://raw.githubusercontent.com/hagezi/dns-blocklists/main/adblock/pro.txt | head -1
+```
+
+Then download the lists:
+
+```
+pihole -g
+```
+
+Result: about 1.7 million unique blocked domains.
+
+Links that did not work:
+
+| Link | Result |
+|---|---|
+| `cdn.jsdelivr.net/gh/hagezi/...` | 403 Forbidden |
+| `raw.githubusercontent.com/hagezi/.../domains/*.txt` | 404 Not found |
+
+Use the `adblock/` paths above, which Pi-hole v6 reads as ABP-style lists.
+
+### Use it on devices
+
+- Set the device's DNS to `192.168.1.60`. Leave the alternate DNS empty, or ads bypass Pi-hole.
+- Turn off browser Secure DNS, Android Private DNS and iCloud Private Relay.
+- If a site breaks, find the domain in **Query Log** and click **Allow**.
+- If the TIF list causes too many problems, remove it and keep Pro.
+
+### Reach it by name through NPM
+
+Proxy host in Nginx Proxy Manager:
+
+```
+pihole.example.com  http://192.168.1.60:80
+```
+
+- Websockets Support: on.
+- SSL tab: Let's Encrypt certificate, Force SSL on.
+- The wildcard DNS record already covers the name.
+- Open `https://pihole.example.com/admin/`. The bare name returns 404 because Pi-hole only serves `/admin`.
+
+To redirect the bare name, add this on the host's **Advanced** tab:
+
+```
+location = / {
+    return 302 /admin/;
+}
+```
+
+If `/admin/` still returns 404, set the domain Pi-hole expects, then restart it:
+
+```
+pihole-FTL --config webserver.domain pihole.example.com
+systemctl restart pihole-FTL
+```
+
+### Optional: use Pi-hole away from home (Tailscale)
+
+1. Give the Pi-hole container Tailscale access, the same way as the NPM container (TUN device lines in `/etc/pve/lxc/<ID>.conf`, then install Tailscale inside).
+2. In the Tailscale admin console, go to **DNS > Global nameservers**, add the container's 100.x.x.x address, and turn on **Override local DNS**.
+3. In Pi-hole, go to **Settings > DNS > Interface settings** and choose **Permit all origins**.
+4. Disable key expiry on the container in the Tailscale admin console.
+
+### Reserve its address
+
+Reserve 192.168.1.60 on the router so no other device takes it.
