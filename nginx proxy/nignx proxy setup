@@ -1,1 +1,151 @@
-s
+Nginx Proxy Manager (NPM) on Proxmox
+
+Notes for setting up Nginx Proxy Manager as an LXC container on Proxmox, so my self-hosted apps open by name (like vault.example.com) instead of IP address and port.
+
+Based on this video: Nginx Proxy Manager Complete Guide - Proxmox Homelab Setup 2026 by Barmine Tech.
+
+Placeholders used in this file: example.com is my domain, 192.168.1.80 is the NPM container.
+
+What a reverse proxy does
+
+Traffic to a name hits the proxy first. The proxy can allow it, drop it, filter it or add security, then forward it to the right app.
+
+vault.example.com  ->  NPM (192.168.1.80)  ->  192.168.1.82:8000
+
+Benefits:
+
+No need to remember IP addresses and ports.
+One wildcard certificate covers every service, which removes the browser security warning.
+Easy for other people in the house to use.
+1. Install NPM (Proxmox helper script)
+Open the Proxmox VE Helper-Scripts website and find the Nginx Proxy Manager script.
+Open a shell on the Proxmox host, paste the install command from the site, and run it.
+Choose the Default install. It finishes quickly.
+Copy the address it prints and open it in a browser, on port 81:
+http://192.168.1.80:81
+
+Review a helper script before running it, because it runs as root on the Proxmox host.
+
+2. First login
+On first start, NPM asks for a name, an email address and a password.
+Sign in. Dark mode is available in the user settings.
+Create a second administrator account with a strong password (see Users below).
+3. Cloudflare DNS records
+
+In Cloudflare, open the domain, then DNS > Records. Remove anything that could conflict, then add two records:
+
+Type	Name	Content	Proxy status
+A	example.com	IPv4 address of the NPM host (192.168.1.80)	DNS only
+CNAME	*	example.com	DNS only
+Enter only the IP address, with no http:// and no trailing slash.
+Turn the proxy off (grey cloud). Cloudflare cannot reach a private address.
+Leave TTL on Auto.
+DNS can take 5 minutes to half an hour, or longer, to propagate. If a name does not resolve right away, wait and retry.
+
+Check with:
+
+ping nginx.example.com
+nslookup nginx.example.com 1.1.1.1
+4. Wildcard SSL certificate (Let's Encrypt, DNS challenge)
+
+One certificate for the root domain and the wildcard covers every service.
+
+In Cloudflare, create an API token (profile settings > API Tokens) with Zone > DNS > Edit permission for the domain.
+In NPM go to Certificates > Add Certificate > Let's Encrypt via DNS.
+Add the domain names:
+example.com (click to add it)
+*.example.com (click to add it)
+Key type: RSA 2048 is widely compatible and fine for internal services. ECDSA is faster and more secure, but not supported everywhere.
+DNS provider: Cloudflare. Paste the API token.
+Propagation seconds: 60, so the DNS check does not fail.
+Save. It takes about a minute.
+
+The certificate list then shows the expiry date and lets you renew or download it from NPM.
+
+Never put the API token in a GitHub repository.
+
+5. Add a proxy host
+Go to Hosts > Proxy Hosts > Add Proxy Host.
+Domain Names: nginx.example.com. Click to add the name, or it will not be saved.
+Scheme: http or https, depending on the app.
+Forward Hostname / IP: the app's address, for example 192.168.1.80.
+Forward Port: the app's port, for example 81 for the NPM admin page.
+Optional: Websockets Support (needed by some apps), Block Common Exploits, Cache Assets.
+Custom locations: leave blank.
+SSL tab: select the wildcard certificate, then save.
+
+Notes:
+
+"Publicly Accessible" in the Access List field does not mean the app is open to the internet. It only means NPM adds no restriction of its own.
+If an app does not load, edit the host and flip the scheme between http and https.
+A name that does not resolve yet usually means DNS is still propagating, or the name is misspelled.
+6. Example hosts
+nginx.example.com     http://192.168.1.80:81
+truenas.example.com   https://192.168.1.88:443
+vault.example.com     https://192.168.1.82:8000
+proxmox.example.com   https://192.168.1.50:8006
+pihole.example.com    http://192.168.1.60:80
+
+Turn on Websockets Support for TrueNAS, Proxmox and Pi-hole. Pi-hole only serves /admin, so open https://pihole.example.com/admin/.
+
+7. Other NPM features
+Feature	What it does
+Redirection Hosts	Sends visitors from an old URL to a new one automatically.
+Streams	Forwards a TCP or UDP port to another machine and port (game servers, FTP and similar).
+404 Hosts	Shows a 404 page for a name you do not want others to reach, with an optional custom message.
+Access Lists	Restricts who can reach a host by username and password, IP address or subnet.
+Users	Multiple accounts. Keep two administrators with strong passwords, in case a password is lost or the database is corrupted.
+Audit Log	Shows who changed what, including the generated config. Useful when several people manage the proxy.
+Settings	Edit the default site (the "Congratulations" page) shown for unknown names.
+Access list example
+Go to Access Lists > Add Access List.
+Add a username and password and/or allow a specific IP or subnet.
+Open a proxy host, set the Access List field to it, and save.
+The site now asks for a login before it loads.
+8. Security notes
+Keep the NPM admin page (port 81) off the internet.
+If you ever expose NPM to the internet, follow proper security practices first. The video does not cover this.
+Use strong, unique passwords and turn on 2FA for Cloudflare and every service behind the proxy.
+Reserve the NPM container's address and the apps' addresses on the router so the forward targets do not change.
+Troubleshooting
+Symptom	Cause and fix
+Name does not resolve	DNS is still propagating, or the name is misspelled. Wait and retry.
+Cloudflare returns its own IPs (104.x, 172.67.x)	The record is proxied. Set it to DNS only.
+502 Bad Gateway	Wrong scheme, IP or port. Flip http and https, and test the backend directly.
+504 or timeout	NPM cannot reach the backend, or the container is offline.
+Certificate warning	The wildcard certificate is not selected on the host's SSL tab, or it needs renewing.
+Console or shell will not open	Websockets Support is off on that host.
+Name works for me but not for others	The other device is not using the DNS that returns the NPM address.
+Optional: private access over Tailscale (my own addition, not in the video)
+
+My router returns no address for names that point to a private (192.168.x) address. To keep the sites private and still reachable from anywhere, I gave the NPM container its own Tailscale address and pointed the DNS record at it.
+
+On the Proxmox host, allow the TUN device for the container (ID 101 here):
+
+nano /etc/pve/lxc/101.conf
+
+Add at the bottom:
+
+lxc.cgroup2.devices.allow: c 10:200 rwm
+lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
+
+Restart the container and install Tailscale inside it:
+
+pct reboot 101
+pct enter 101
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
+tailscale ip -4
+exit
+
+Then:
+
+Set the Cloudflare A record to the 100.x.x.x address from tailscale ip -4 (DNS only). The wildcard CNAME stays the same.
+In the Tailscale admin console, open the container's menu and choose Disable key expiry.
+Test with Tailscale on: https://vault.example.com. With Tailscale off, it should fail, which confirms it is private.
+
+From the host, use pct exec 101 -- tailscale ip -4 (the -- stops pct reading -4 as its own option).
+
+Never commit
+
+Cloudflare API tokens, Tailscale auth keys, tunnel tokens, passwords, .env files, or exported NPM configs.
