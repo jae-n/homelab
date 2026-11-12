@@ -1,0 +1,49 @@
+# Nginx Proxy Manager hosts
+
+Admin page: `http://192.168.1.80:81` (keep it off the internet).
+
+## Hosts
+
+```
+nginx.example.com     http://192.168.1.80:81
+truenas.example.com   https://192.168.1.88:443
+vault.example.com     https://192.168.1.82:8000
+proxmox.example.com   https://192.168.1.50:8006
+pihole.example.com    http://192.168.1.60:80
+```
+
+## Settings per host
+
+- Websockets Support: on (required for TrueNAS, Proxmox and Pi-hole).
+- Block Common Exploits: on. Cache Assets: off.
+- SSL tab: Let's Encrypt certificate, Force SSL on, HTTP/2 on.
+- DNS: the wildcard `*` record already covers every name.
+
+## Add the Pi-hole host
+
+1. Hosts > Proxy Hosts > Add Proxy Host.
+2. Domain Names: `pihole.example.com`. Scheme: `http`. Forward IP: `192.168.1.60`. Port: `80`. Websockets on.
+3. SSL tab: select the certificate, turn on Force SSL, and save.
+4. Open `https://pihole.example.com/admin/`. The bare name returns 404 because Pi-hole only serves `/admin`.
+
+To redirect the bare name, add this on the host's **Advanced** tab:
+
+```
+location = / {
+    return 302 /admin/;
+}
+```
+
+If `/admin/` still returns 404, set the domain Pi-hole expects, then restart it:
+
+```
+pihole-FTL --config webserver.domain pihole.example.com
+systemctl restart pihole-FTL
+```
+
+## Troubleshooting
+
+- **502 Bad Gateway:** wrong scheme, IP or port in the host. Test the backend directly with curl.
+- **504 or timeout:** Tailscale is off on the device, or the NPM container is offline.
+- **Certificate warning:** the Let's Encrypt cert isn't selected on the SSL tab.
+- **Console or shell won't open:** Websockets Support is off.
