@@ -1,0 +1,13 @@
+### Install (Proxmox VE Helper-Script)
+
+Run this on the **Proxmox host shell** (not inside a container), as root:
+
+```
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/community-scripts/ProxmoxVE/main/ct/pihole.sh)"
+```
+
+- It creates a new LXC container and installs Pi-hole inside it.
+- Choose **Default** settings, or **Advanced** to set the container ID, static IP, gateway, DNS and root password.
+- Pick an address that is not handed out by the router's DHCP (here 192.168.1.60), or reserve it on the router.
+- Check the script's output at the end for the container's address, and set the web password with `pihole setpassword`.
+- Review a script before running it: it runs as root on the Proxmox host. Source: https://community-scripts.org/scripts?type=ct&q=pi&preview=pihole
