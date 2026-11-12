@@ -1,0 +1,129 @@
+Vaultwarden on Proxmox
+
+Notes for running Vaultwarden, a self-hosted, Bitwarden-compatible password manager, as an LXC container on Proxmox.
+
+Based on this video by Barmine Tech: https://www.youtube.com/watch?v=cym-wN9yACU
+
+Placeholders used in this file: example.com is my domain, 192.168.1.82 is the Vaultwarden container, 192.168.1.80 is Nginx Proxy Manager.
+
+What it is
+Bitwarden is an online password manager. Vaultwarden is a lightweight self-hosted version of it.
+You keep full control of your passwords, since they are stored on your own server, encrypted.
+It supports multi-factor authentication, including hardware security keys.
+The project is actively maintained and security updates are released often, so keep it updated.
+Where to host it
+Option	Notes
+Public (VPS)	Reachable everywhere, but exposed to the internet, so people may try to break in.
+At home, opened to the internet	Needs ports 80 or 443 open, which many home ISPs do not allow.
+At home, internal only	Reach it from outside through a VPN (such as Tailscale). Safest option.
+
+This setup is internal only. Your vault holds passwords and possibly card and finance details, so do not expose it to the public internet.
+
+Prerequisite: HTTPS
+
+Vaultwarden only works properly over HTTPS. Creating an account over plain HTTP fails with an error saying HTTPS is required. You need a reverse proxy with an SSL certificate in front of it. See ../nginx-proxy-manager/README.md.
+
+1. Install (Proxmox helper script)
+Open the Proxmox VE Helper-Scripts website, go to View Scripts and search for Vaultwarden (it is also under Miscellaneous). The page shows the default specs, a link to the project and the script source.
+Copy the install command.
+In Proxmox, right-click the node, open a Shell, paste the command and press Enter.
+Confirm that you want to create a new Vaultwarden container.
+Choose Default settings, or Advanced settings to change the container ID, hostname, hardware or the Debian/Ubuntu or Alpine build.
+Wait. The container build can take 10 to 15 minutes and may sit on "creating Vaultwarden... patience", which is normal.
+When it finishes, it prints the container's address and URL (port 8000).
+
+Review a helper script before running it, because it runs as root on the Proxmox host.
+
+2. Reserve the address
+
+Reserve the container's address on the router so the proxy target never changes:
+
+192.168.1.82   Vaultwarden
+
+Check the address from the Proxmox host:
+
+pct list
+pct exec 100 ip a
+3. Add a proxy host in Nginx Proxy Manager
+
+In NPM (http://192.168.1.80:81), go to Hosts > Proxy Hosts > Add Proxy Host.
+
+Setting	Value
+Domain Names	vault.example.com (click to add it)
+Scheme	http or https, whichever loads (mine uses https)
+Forward Hostname / IP	192.168.1.82
+Forward Port	8000
+Cache Assets	On (the video turns it on)
+Websockets Support	On
+Block Common Exploits	On
+SSL tab	Select the wildcard certificate
+Force SSL	On
+
+Save, then open https://vault.example.com. It shows a login page.
+
+If it does not load, edit the host and flip the scheme between http and https.
+
+4. Create your account
+
+Vaultwarden has no default credentials. Create your own:
+
+Click Create account on the login page.
+Enter an email address, a name and a master password.
+If you see a red error saying HTTPS is required, you are not using the HTTPS name. Use https://vault.example.com, not the IP address.
+Log in and choose Not now when the browser offers to save the password.
+
+The master password protects everything in the vault. Make it strong and something you will remember, because it is the only password into your instance and it cannot be recovered.
+
+5. Import existing passwords (optional)
+In your current browser's password manager, export the passwords to a file (usually JSON or CSV).
+In Vaultwarden, go to Tools > Import data and import the file.
+Delete the exported file afterwards. It contains your passwords in plain text.
+6. Browser extension and phone app
+
+Browser extension:
+
+Install the Bitwarden extension from your browser's store.
+Before logging in, choose the self-hosted option (the settings icon on the login screen).
+Set the server URL to https://vault.example.com and save.
+Log in with your email and master password.
+
+Phone app:
+
+Install the standard Bitwarden app (Android or iPhone).
+On the login screen, set the self-hosted server URL to https://vault.example.com.
+Log in.
+
+With my setup the name only resolves for devices on my Tailscale network, so turn Tailscale on first when away from home.
+
+7. Using it
+My Vault stores logins, cards, identities and secure notes.
+With the extension installed, it offers to save new logins and autofills saved ones.
+Generator: use long, strong passwords (the video uses at least 25 characters).
+Send shares credentials or notes temporarily.
+Reports show weak, reused or exposed passwords.
+8. Settings worth checking
+Preferences: dark mode, language and the vault timeout (how long before the vault locks and asks you to log in again).
+Security: change the master password, turn on two-factor authentication, view encryption keys.
+Emergency access: let a trusted person request access to the vault if something happens to you.
+9. Back up the vault
+Go to Tools > Export vault and choose JSON.
+Store the file somewhere safe and offline. It contains every login, URL and password in plain text.
+Importing the file into a new Vaultwarden instance restores everything.
+
+Also back up the container with a Proxmox backup, and keep that backup somewhere other than the same machine.
+
+10. Security notes
+Keep it internal. Do not port-forward ports 80 or 443 to it.
+Reach it from outside only through a VPN. Here, Tailscale gives the NPM container a private address, so only my own devices can open the site.
+Turn on two-factor authentication for the vault, Cloudflare, Proxmox and Tailscale.
+Update Vaultwarden regularly. It stores sensitive data, and updates include security fixes.
+Never commit an exported vault, passwords, API tokens or .env files to GitHub.
+Troubleshooting
+Symptom	Cause and fix
+Red error: HTTPS required	Open the site through the proxy name (https://vault.example.com), not http://IP:8000.
+Page will not load through the proxy	Flip the scheme between http and https, and check the IP and port 8000.
+502 Bad Gateway	NPM cannot reach 192.168.1.82:8000. Check the container is running and the address has not changed.
+504 or timeout	Tailscale is off on the device, or the NPM container is offline.
+Name does not resolve	DNS still propagating, or the Cloudflare records are wrong. See the NPM README.
+Extension or app will not log in	The server URL is wrong, or still set to bitwarden.com. Set the self-hosted URL.
+Certificate warning	The wildcard certificate is not selected on the proxy host's SSL tab.
