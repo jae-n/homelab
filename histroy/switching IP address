@@ -1,0 +1,182 @@
+# Homelab Notes: Private Self-Hosted Apps over Tailscale
+
+Setup: Proxmox host, Nginx Proxy Manager (NPM) in an LXC container, Vaultwarden, a TrueNAS VM, Cloudflare DNS, and Tailscale.
+
+Goal: reach the apps by domain name from my own devices only. No port forwarding, nothing exposed to the internet.
+
+## How it works
+
+- `*.example.com` resolves in Cloudflare to the NPM container's Tailscale address (100.x.x.x), DNS only.
+- Only devices signed in to my tailnet can reach that address.
+- NPM forwards each name to its backend on the home network.
+
+```
+Device (Tailscale on) -> 100.x.x.x (NPM container) -> NPM -> backend on 192.168.1.x
+```
+
+## Addresses
+
+| Device | Address |
+|---|---|
+| Router/gateway | 192.168.1.254 |
+| Proxmox host | 192.168.1.50 |
+| NPM (container 101) | 192.168.1.80 and Tailscale 100.x.x.x |
+| Vaultwarden (container 100) | 192.168.1.82 |
+| TrueNAS (VM 104) | 192.168.1.88 |
+
+## 1. Fix Proxmox network after moving (host console, as root)
+
+```
+nano /etc/network/interfaces
+```
+
+In the `vmbr0` section:
+
+```
+address 192.168.1.50/24
+gateway 192.168.1.254
+```
+
+Update the host's own line in the hosts file (change only the IP):
+
+```
+nano /etc/hosts
+reboot
+```
+
+Check addresses afterwards:
+
+```
+ip a
+pct list
+pct exec 100 ip a
+pct exec 101 ip a
+```
+
+## 2. Give the NPM container Tailscale access (Proxmox host console)
+
+Allow the TUN device in the container config:
+
+```
+nano /etc/pve/lxc/101.conf
+```
+
+Add at the bottom:
+
+```
+lxc.cgroup2.devices.allow: c 10:200 rwm
+lxc.mount.entry: /dev/net/tun dev/net/tun none bind,create=file
+```
+
+Restart and install Tailscale inside the container:
+
+```
+pct reboot 101
+pct enter 101
+curl -fsSL https://tailscale.com/install.sh | sh
+tailscale up
+tailscale ip -4
+exit
+```
+
+Open the login link from `tailscale up` and approve the device. `tailscale ip -4` prints the 100.x.x.x address.
+
+From the host, add `--` before the command, or pct reads `-4` as its own option:
+
+```
+pct exec 101 -- tailscale ip -4
+```
+
+In the Tailscale admin console (Machines), open the container's menu and choose **Disable key expiry**.
+
+## 3. Cloudflare DNS (DNS only, no proxy)
+
+```
+A      example.com   100.x.x.x     DNS only
+CNAME  *             example.com   DNS only
+```
+
+The A record is the NPM container's Tailscale address. The wildcard follows it, so every subdomain resolves there. A proxied (orange cloud) record can't reach a private or Tailscale address, so keep both records grey.
+
+## 4. Nginx Proxy Manager hosts
+
+```
+nginx.example.com    http://192.168.1.80:81
+truenas.example.com  https://192.168.1.88:443
+vault.example.com    https://192.168.1.82:8000
+```
+
+For HTTPS, request a Let's Encrypt certificate in NPM using the DNS Challenge with a Cloudflare API token (Zone > DNS > Edit). Keep the token out of this repo.
+
+TrueNAS needs Websockets Support turned on.
+
+## 5. Reserve DHCP addresses on the router
+
+Reserve these so NPM's forward targets don't change:
+
+```
+192.168.1.80   NPM
+192.168.1.82   Vaultwarden
+192.168.1.88   TrueNAS
+```
+
+## 6. Testing
+
+Browser (Tailscale on, Incognito window):
+
+```
+https://vault.example.com
+https://truenas.example.com
+https://nginx.example.com
+```
+
+All three at once in PowerShell:
+
+```
+foreach ($h in "vault","truenas","nginx") {
+  $n = "$h.example.com"
+  Write-Host "--- $n ---"
+  nslookup $n 1.1.1.1 | Select-String "Address"
+  curl.exe -k -s -o NUL -w "HTTP status: %{http_code}`n" https://$n
+}
+```
+
+Each name should resolve to the 100.x.x.x address. A status of 200, 301, 302 or 307 means it works.
+
+Backends directly:
+
+```
+curl.exe -k -s -o NUL -w "%{http_code}`n" https://192.168.1.82:8000
+curl.exe -k -s -o NUL -w "%{http_code}`n" https://192.168.1.88
+curl.exe -k -s -o NUL -w "%{http_code}`n" http://192.168.1.80:81
+```
+
+Phone:
+
+1. Install Tailscale and sign in to the same account.
+2. Turn Wi-Fi off, Tailscale on, then open the three URLs. They should load.
+3. Turn Tailscale off and reload. They should fail, which confirms they are private.
+
+## Direct addresses (no DNS needed, on the home network)
+
+```
+http://192.168.1.80:81
+https://192.168.1.50:8006
+https://192.168.1.82:8000
+https://192.168.1.88
+```
+
+## Troubleshooting
+
+- **Cloudflare returns its own IPs (104.x, 172.67.x):** the record is proxied. Set it to DNS only.
+- **Router returns a name with no address:** the ISP gateway strips private (192.168.x) answers. Pointing DNS at the Tailscale 100.x address avoids this.
+- **502 Bad Gateway:** NPM was reached but the forward IP, port or scheme is wrong. After moving networks, old 192.168.68.x addresses cause this.
+- **504 or timeout:** Tailscale is off on the device, or the NPM container is offline in the Tailscale admin console.
+- **Sites stop working after about 6 months:** the Tailscale key expired. Disable key expiry on the NPM container.
+- **Phone fails:** turn off Private DNS (Android) or iCloud Private Relay and other VPNs (iPhone).
+- **`pct exec` says "Unknown option":** add `--` before the command.
+- Never expose the Proxmox UI (8006) or the NPM admin (81) to the internet.
+
+## Never commit
+
+Cloudflare API tokens, Tailscale auth keys, tunnel tokens, passwords, `.env` files, or exported NPM configs.
